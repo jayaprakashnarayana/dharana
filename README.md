@@ -2,6 +2,11 @@
 
 **Dharana** (Sanskrit for *concentration* or *focus*) is a lightweight, open-source macOS application designed to keep your active task floating right next to your mouse cursor. Keep your goals front-and-center as you navigate your workspaces.
 
+<p align="center">
+  <img src="assets/dashboard.jpg" width="400" alt="Dharana Dashboard UI" />
+  <img src="assets/cursor_pill.jpg" width="400" alt="Cursor Pill Overlay" />
+</p>
+
 ---
 
 ## Core Features
