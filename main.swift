@@ -1,8 +1,9 @@
 import Cocoa
 import SwiftUI
 import Combine
+import UserNotifications
 
-// 1. TaskState (ObservableObject) to coordinate active task between Popover and Overlay
+// 1. TaskState (ObservableObject) to coordinate active task and timer between Popover and Overlay
 class TaskState: ObservableObject {
     @Published var currentTask: String = "Focus Session 🧘"
     @Published var isVisible: Bool = true
@@ -14,6 +15,11 @@ class TaskState: ObservableObject {
         "Coffee Break ☕️"
     ]
     
+    // Timer State
+    @Published var timerRemaining: Int = 0
+    @Published var isTimerActive: Bool = false
+    private var countdownTimer: AnyCancellable?
+    
     // AI Integration Settings
     @Published var isGeneratingAI: Bool = false
     @Published var apiEndpoint: String = UserDefaults.standard.string(forKey: "dharana_api_endpoint") ?? ""
@@ -22,6 +28,52 @@ class TaskState: ObservableObject {
     func saveSettings() {
         UserDefaults.standard.set(apiEndpoint, forKey: "dharana_api_endpoint")
         UserDefaults.standard.set(idToken, forKey: "dharana_id_token")
+    }
+    
+    // Timer Actions
+    func startTimer(durationInSeconds: Int) {
+        stopTimer()
+        timerRemaining = durationInSeconds
+        isTimerActive = true
+        
+        countdownTimer = Timer.publish(every: 1.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                if self.timerRemaining > 0 {
+                    self.timerRemaining -= 1
+                } else {
+                    self.timerExpired()
+                }
+            }
+    }
+    
+    func stopTimer() {
+        isTimerActive = false
+        timerRemaining = 0
+        countdownTimer?.cancel()
+        countdownTimer = nil
+    }
+    
+    private func timerExpired() {
+        stopTimer()
+        currentTask = "Break Time ☕️"
+        NSSound.beep()
+        sendNotification()
+    }
+    
+    private func sendNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "Time's Up! 🧘"
+        content.body = "Your focus session is complete. Time to take a break!"
+        content.sound = .default
+        
+        let request = UNNotificationRequest(identifier: "DharanaTimerExpired", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Notification error:", error)
+            }
+        }
     }
 }
 
@@ -45,7 +97,6 @@ class AIService {
         request.setValue(idToken, forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 10
         
-        // Formulate prompt for Claude
         let prompt = "Suggest a single, active, action-oriented task description (max 4 words, include 1 matching emoji at the end) describing what a developer is doing based on this context: '\(context)'. Output ONLY the task name, nothing else."
         
         let payload: [String: Any] = [
@@ -90,14 +141,25 @@ struct CursorOverlayView: View {
     @ObservedObject var state: TaskState
     
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Circle()
-                .fill(Color.indigo)
+                .fill(state.isTimerActive ? Color.green : Color.indigo)
                 .frame(width: 6, height: 6)
+            
             Text(state.currentTask)
                 .font(.system(size: 11, weight: .semibold, design: .default))
                 .foregroundColor(.white)
                 .lineLimit(1)
+            
+            if state.isTimerActive {
+                Text(formatTime(state.timerRemaining))
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Color.white.opacity(0.12))
+                    .cornerRadius(3)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -112,12 +174,17 @@ struct CursorOverlayView: View {
         .shadow(color: Color.black.opacity(0.3), radius: 3, x: 0, y: 2)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
+    
+    private func formatTime(_ seconds: Int) -> String {
+        let mins = seconds / 60
+        let secs = seconds % 60
+        return String(format: "%02d:%02d", mins, secs)
+    }
 }
 
-// 4. Popover SwiftUI view for selecting / entering tasks
+// 4. Popover SwiftUI view for selecting / entering tasks and managing timers
 struct TaskPopoverView: View {
     @ObservedObject var state: TaskState
-    @State private var newTaskName: String = ""
     @State private var showAISettings: Bool = false
     
     var body: some View {
@@ -182,72 +249,89 @@ struct TaskPopoverView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
             
-            // Text input for new task
-            HStack(spacing: 8) {
-                TextField("Add custom task...", text: $newTaskName, onCommit: {
-                    addNewTask()
-                })
-                .textFieldStyle(PlainTextFieldStyle())
-                .padding(8)
-                .background(Color.white.opacity(0.08))
-                .cornerRadius(6)
-                .foregroundColor(.white)
+            // Active task card (Directly editable!)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("CURRENT FOCUS (CLICK TEXT TO EDIT)")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(.gray)
                 
-                Button(action: addNewTask) {
-                    Image(systemName: "plus")
-                        .foregroundColor(.white)
-                        .padding(8)
-                        .background(Color.indigo)
-                        .cornerRadius(6)
-                }
-                .buttonStyle(PlainButtonStyle())
-            }
-            
-            // Active task card & AI Suggest Button
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("CURRENT FOCUS")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.gray)
+                HStack(spacing: 8) {
+                    TextField("Enter active focus...", text: $state.currentTask, onCommit: {
+                        updateRecentTasks(with: state.currentTask)
+                    })
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
                     
-                    Text(state.currentTask)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.indigo.opacity(0.15))
-                .cornerRadius(8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.indigo.opacity(0.3), lineWidth: 1)
-                )
-                
-                // AI Generate Button
-                Button(action: triggerAISuggestion) {
-                    VStack(spacing: 2) {
+                    // AI Sparkles Generate Button
+                    Button(action: triggerAISuggestion) {
                         if state.isGeneratingAI {
                             ProgressView()
-                                .scaleEffect(0.6)
-                                .frame(width: 18, height: 18)
+                                .scaleEffect(0.5)
+                                .frame(width: 14, height: 14)
                         } else {
                             Image(systemName: "sparkles")
-                                .font(.system(size: 16))
-                                .foregroundColor(.white)
+                                .font(.system(size: 12))
+                                .foregroundColor(.indigo)
                         }
-                        Text("AI")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundColor(.white)
                     }
-                    .frame(width: 44, height: 44)
-                    .background(Color.indigo)
-                    .cornerRadius(8)
+                    .buttonStyle(PlainButtonStyle())
+                    .disabled(state.isGeneratingAI)
+                    .help("Auto-suggest task using Bedrock Claude")
                 }
-                .buttonStyle(PlainButtonStyle())
-                .disabled(state.isGeneratingAI)
-                .help("Auto-suggest task using Bedrock Claude")
+            }
+            .padding(10)
+            .background(Color.indigo.opacity(0.12))
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.indigo.opacity(0.25), lineWidth: 1)
+            )
+            
+            // Focus Timer Controls
+            VStack(alignment: .leading, spacing: 6) {
+                Text("FOCUS TIMER")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.gray)
+                
+                HStack(spacing: 8) {
+                    // Digital Time Display
+                    Text(formatTime(state.timerRemaining))
+                        .font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .foregroundColor(state.isTimerActive ? .green : .white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(6)
+                    
+                    // Presets
+                    ForEach([15, 25, 50], id: \.self) { mins in
+                        Button("\(mins)m") {
+                            state.startTimer(durationInSeconds: mins * 60)
+                            updateRecentTasks(with: state.currentTask)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.05))
+                        .cornerRadius(6)
+                    }
+                    
+                    // Stop Button
+                    if state.isTimerActive {
+                        Button("Stop") {
+                            state.stopTimer()
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.red)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Color.red.opacity(0.15))
+                        .cornerRadius(6)
+                    }
+                }
             }
             
             // Quick switch favorites (top 3)
@@ -332,22 +416,21 @@ struct TaskPopoverView: View {
         .background(VisualEffectView().edgesIgnoringSafeArea(.all))
     }
     
-    private func addNewTask() {
-        let trimmed = newTaskName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            state.currentTask = trimmed
-            updateRecentTasks(with: trimmed)
-            newTaskName = ""
-        }
-    }
-    
     private func updateRecentTasks(with task: String) {
-        if !state.recentTasks.contains(task) {
-            state.recentTasks.insert(task, at: 0)
+        let trimmed = task.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if !state.recentTasks.contains(trimmed) {
+            state.recentTasks.insert(trimmed, at: 0)
             if state.recentTasks.count > 5 {
                 state.recentTasks.removeLast()
             }
         }
+    }
+    
+    private func formatTime(_ seconds: Int) -> String {
+        let mins = seconds / 60
+        let secs = seconds % 60
+        return String(format: "%02d:%02d", mins, secs)
     }
     
     private func triggerAISuggestion() {
@@ -423,6 +506,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Hide standard dock icon since this is a utility/menu bar app
         NSApp.setActivationPolicy(.accessory)
         
+        // Request notifications permission for timer alarms
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        
         setupStatusItem()
         setupOverlayWindow()
         startCursorTracking()
@@ -459,13 +545,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if popover.isShown {
                 popover.performClose(sender)
             } else {
-                // IMPORTANT FOCUS FIX: 
-                // Activate the application so it comes to the front and can receive key focus!
                 NSApp.activate(ignoringOtherApps: true)
-                
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                
-                // Force the popover window to become the key window to receive keyboard typing inputs!
                 popover.contentViewController?.view.window?.makeKey()
             }
         }
