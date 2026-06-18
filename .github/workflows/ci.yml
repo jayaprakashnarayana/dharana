@@ -1,0 +1,47 @@
+name: Dharana CI & Security Scan
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  lint-and-build:
+    name: Swift Lint & Build
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # --- SwiftLint ---
+      - name: Run SwiftLint
+        uses: norio-nomura/action-swiftlint@3.2.1
+        with:
+          args: --strict
+        continue-on-error: true # Let formatting warnings pass, but show them in logs
+
+      # --- Swift Compilation Check ---
+      - name: Verify Swift Compilation
+        run: |
+          swiftc -sdk $(xcrun --show-sdk-path --sdk macosx) -O main.swift -o Dharana
+          echo "Swift compilation successful!"
+
+  security-scan:
+    name: Security & Vulnerability Scan (Trivy)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # --- Security Scanning (OWASP/Secrets) ---
+      - name: Run Trivy Security Scan (Filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'table'
+          exit-code: '1' # Fail build if vulnerabilities or secrets are detected
+          severity: 'CRITICAL,HIGH'
