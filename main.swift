@@ -198,7 +198,7 @@ struct TaskPopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Dharana Focus Tracker")
+                Text("Dharana - Focus")
                     .font(.headline)
                     .foregroundColor(.white)
                 Spacer()
@@ -539,7 +539,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Dharana Dashboard"
+        window.title = "Dharana - Focus"
         window.center()
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: TaskPopoverView(state: taskState))
