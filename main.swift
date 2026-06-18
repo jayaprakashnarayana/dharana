@@ -7,13 +7,25 @@ import UserNotifications
 class TaskState: ObservableObject {
     @Published var currentTask: String = "Focus Session 🧘"
     @Published var isVisible: Bool = true
-    @Published var recentTasks: [String] = [
-        "Coding 💻",
-        "Writing 📝",
-        "Debugging 🐛",
-        "Meetings 🤝",
-        "Coffee Break ☕️"
-    ]
+    @Published var recentTasks: [String] {
+        didSet {
+            UserDefaults.standard.set(recentTasks, forKey: "dharana_recent_tasks")
+        }
+    }
+    
+    init() {
+        if let saved = UserDefaults.standard.stringArray(forKey: "dharana_recent_tasks"), !saved.isEmpty {
+            self.recentTasks = saved
+        } else {
+            self.recentTasks = [
+                "Coding 💻",
+                "Writing 📝",
+                "Debugging 🐛",
+                "Meetings 🤝",
+                "Coffee Break ☕️"
+            ]
+        }
+    }
     
     // Timer State
     @Published var timerRemaining: Int = 0
@@ -253,17 +265,20 @@ struct TaskPopoverView: View {
             
             // Active task card (Directly editable!)
             VStack(alignment: .leading, spacing: 4) {
-                Text("CURRENT FOCUS (CLICK TEXT TO EDIT)")
+                Text("WHAT ARE YOU FOCUSING ON?")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundColor(.gray)
                 
                 HStack(spacing: 8) {
-                    TextField("Enter active focus...", text: $state.currentTask, onCommit: {
+                    TextField("Enter custom focus...", text: $state.currentTask, onCommit: {
                         updateRecentTasks(with: state.currentTask)
                     })
                     .textFieldStyle(PlainTextFieldStyle())
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.white)
+                    .padding(6)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(6)
                     
                     // AI Sparkles Generate Button
                     Button(action: triggerAISuggestion) {
