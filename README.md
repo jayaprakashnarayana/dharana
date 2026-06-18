@@ -12,7 +12,7 @@
 * **Alarms & System Notifications**: Plays a beep and displays a system alert when the timer expires, auto-switching your focus to `Break Time ☕️`.
 * **Menu Bar Popover UI**: Access the SwiftUI tracker dashboard via a checklist icon in the status bar.
 * **Status Context Menu**: Hold **`Control`** and click (or **two-finger tap** on trackpads) the status icon to open a native menu and quickly switch between your top 3 tasks without opening the popover.
-* **Bedrock Claude AI Integration**: Connects to Cognito-secured API Gateway endpoints to trigger Claude AI to analyze your frontmost application context and auto-suggest your task. Includes a standalone mock simulator to test the flow out of the box.
+* **Gemini AI Integration**: Connects directly to the Google Gemini API (`gemini-2.5-flash`) to analyze your active application window context and auto-suggest your task. Input your API key directly inside the app settings.
 
 ---
 
@@ -52,12 +52,12 @@ If you want to change focus without opening the popover:
 * Press the shortcut number (`1`, `2`, `3`) or click an item to switch focus.
 * Click **`Quit App`** to close Dharana.
 
-### 5. Bedrock Claude AI Auto-Suggestions
+### 5. Google Gemini AI Auto-Suggestions
 1. Left-click the menu bar icon and tap the **Brain icon** in the top right.
-2. Paste the **AWS API Gateway URL** and **Cognito ID Token** from your Bedrock deployment.
-3. Click **Save Config**.
-4. Click the **AI (Sparkles) button** next to your active task. Claude will analyze your frontmost application (e.g., Xcode, Safari, Slack) and automatically set a short task description with an emoji!
-5. *(If credentials are empty, clicking the Sparkles button will simulate Claude suggestions for demonstration).*
+2. Paste your **Gemini API Key** (if you don't have one, click the link inside the settings panel to get a key from [Google AI Studio](https://aistudio.google.com/)).
+3. Click **Save Key**.
+4. Click the **AI (Sparkles) button** next to your active task. Gemini will analyze your frontmost application (e.g., Xcode, Safari, Slack) and automatically set a short task description with an emoji!
+5. *(If credentials are empty, clicking the Sparkles button will simulate Gemini suggestions for demonstration).*
 
 ---
 

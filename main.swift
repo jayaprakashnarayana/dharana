@@ -20,14 +20,12 @@ class TaskState: ObservableObject {
     @Published var isTimerActive: Bool = false
     private var countdownTimer: AnyCancellable?
     
-    // AI Integration Settings
+    // Gemini AI Integration Settings
     @Published var isGeneratingAI: Bool = false
-    @Published var apiEndpoint: String = UserDefaults.standard.string(forKey: "dharana_api_endpoint") ?? ""
-    @Published var idToken: String = UserDefaults.standard.string(forKey: "dharana_id_token") ?? ""
+    @Published var geminiApiKey: String = UserDefaults.standard.string(forKey: "dharana_gemini_api_key") ?? ""
     
     func saveSettings() {
-        UserDefaults.standard.set(apiEndpoint, forKey: "dharana_api_endpoint")
-        UserDefaults.standard.set(idToken, forKey: "dharana_id_token")
+        UserDefaults.standard.set(geminiApiKey, forKey: "dharana_gemini_api_key")
     }
     
     // Timer Actions
@@ -77,16 +75,17 @@ class TaskState: ObservableObject {
     }
 }
 
-// 2. AI Integration Service (connects Swift to the API Gateway Bedrock Claude endpoint)
+// 2. Gemini AI Integration Service (connects Swift directly to the Google Gemini API)
 class AIService {
-    static func suggestTask(apiEndpoint: String, idToken: String, context: String, completion: @escaping (String?) -> Void) {
-        guard !apiEndpoint.isEmpty, !idToken.isEmpty else {
+    static func suggestTask(apiKey: String, context: String, completion: @escaping (String?) -> Void) {
+        guard !apiKey.isEmpty else {
             completion(nil)
             return
         }
         
-        let cleanedEndpoint = apiEndpoint.hasSuffix("/") ? String(apiEndpoint.dropLast()) : apiEndpoint
-        guard let url = URL(string: "\(cleanedEndpoint)/chat") else {
+        // Using Gemini 2.5 Flash as the standard fast, lightweight model
+        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=\(apiKey)"
+        guard let url = URL(string: urlString) else {
             completion(nil)
             return
         }
@@ -94,21 +93,23 @@ class AIService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(idToken, forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 10
         
+        // Formulate prompt for Gemini
         let prompt = "Suggest a single, active, action-oriented task description (max 4 words, include 1 matching emoji at the end) describing what a developer is doing based on this context: '\(context)'. Output ONLY the task name, nothing else."
         
         let payload: [String: Any] = [
-            "messages": [
+            "contents": [
                 [
-                    "role": "user",
-                    "content": [
-                        ["type": "text", "text": prompt]
+                    "parts": [
+                        ["text": prompt]
                     ]
                 ]
             ],
-            "temperature": 0.7
+            "generationConfig": [
+                "temperature": 0.7,
+                "maxOutputTokens": 20
+            ]
         ]
         
         guard let httpBody = try? JSONSerialization.data(withJSONObject: payload, options: []) else {
@@ -123,13 +124,20 @@ class AIService {
                 return
             }
             
+            // Parse Google Gemini generateContent response JSON
             if let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-               let content = json["content"] as? [[String: Any]],
-               let textBlock = content.first,
-               let text = textBlock["text"] as? String {
+               let candidates = json["candidates"] as? [[String: Any]],
+               let firstCandidate = candidates.first,
+               let content = firstCandidate["content"] as? [String: Any],
+               let parts = content["parts"] as? [[String: Any]],
+               let firstPart = parts.first,
+               let text = firstPart["text"] as? String {
                 let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 completion(cleaned)
             } else {
+                if let rawString = String(data: data, encoding: .utf8) {
+                    print("Raw Gemini API error or response:", rawString)
+                }
                 completion(nil)
             }
         }.resume()
@@ -201,27 +209,17 @@ struct TaskPopoverView: View {
                     }
                 }) {
                     Image(systemName: "brain.headset")
-                        .foregroundColor(state.apiEndpoint.isEmpty ? .gray : .indigo)
+                        .foregroundColor(state.geminiApiKey.isEmpty ? .gray : .indigo)
                         .font(.system(size: 14, weight: .semibold))
                 }
                 .buttonStyle(PlainButtonStyle())
-                .help("AI Integration Settings")
+                .help("Gemini API Settings")
             }
             
-            // Collapsible AI Config settings
+            // Collapsible Gemini Config settings
             if showAISettings {
                 VStack(spacing: 8) {
-                    TextField("AWS API Gateway URL...", text: $state.apiEndpoint, onCommit: {
-                        state.saveSettings()
-                    })
-                    .textFieldStyle(PlainTextFieldStyle())
-                    .padding(6)
-                    .background(Color.white.opacity(0.06))
-                    .cornerRadius(4)
-                    .foregroundColor(.white)
-                    .font(.system(size: 11))
-                    
-                    SecureField("Cognito ID Token...", text: $state.idToken, onCommit: {
+                    SecureField("Gemini API Key...", text: $state.geminiApiKey, onCommit: {
                         state.saveSettings()
                     })
                     .textFieldStyle(PlainTextFieldStyle())
@@ -232,7 +230,7 @@ struct TaskPopoverView: View {
                     .font(.system(size: 11))
                     
                     HStack {
-                        Button("Save Config") {
+                        Button("Save Key") {
                             state.saveSettings()
                             withAnimation { showAISettings = false }
                         }
@@ -241,6 +239,10 @@ struct TaskPopoverView: View {
                         .foregroundColor(.indigo)
                         
                         Spacer()
+                        
+                        Link("Get Gemini API Key 🔑", destination: URL(string: "https://aistudio.google.com/")!)
+                            .font(.system(size: 10))
+                            .foregroundColor(.gray)
                     }
                 }
                 .padding(8)
@@ -277,7 +279,7 @@ struct TaskPopoverView: View {
                     }
                     .buttonStyle(PlainButtonStyle())
                     .disabled(state.isGeneratingAI)
-                    .help("Auto-suggest task using Bedrock Claude")
+                    .help("Auto-suggest task using Gemini AI")
                 }
             }
             .padding(10)
@@ -412,7 +414,7 @@ struct TaskPopoverView: View {
             }
         }
         .padding(16)
-        .frame(width: 280, height: showAISettings ? 500 : 440)
+        .frame(width: 280, height: showAISettings ? 470 : 440)
         .background(VisualEffectView().edgesIgnoringSafeArea(.all))
     }
     
@@ -434,7 +436,7 @@ struct TaskPopoverView: View {
     }
     
     private func triggerAISuggestion() {
-        if state.apiEndpoint.isEmpty || state.idToken.isEmpty {
+        if state.geminiApiKey.isEmpty {
             state.isGeneratingAI = true
             let mockTasks = [
                 "Refactoring Code 🛠️",
@@ -452,8 +454,8 @@ struct TaskPopoverView: View {
                 updateRecentTasks(with: suggested)
                 
                 let alert = NSAlert()
-                alert.messageText = "Mock AI Suggestion"
-                alert.informativeText = "To trigger real Bedrock Claude suggestions, configure your AWS API Gateway endpoint and Cognito ID Token inside the Settings panel (brain icon)."
+                alert.messageText = "Mock Gemini Suggestion"
+                alert.informativeText = "To trigger real Gemini suggestions, configure your Gemini API Key inside the Settings panel (brain icon)."
                 alert.addButton(withTitle: "OK")
                 alert.runModal()
             }
@@ -464,7 +466,7 @@ struct TaskPopoverView: View {
         let activeAppName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Xcode"
         let context = "User is currently focusing on: \(activeAppName)"
         
-        AIService.suggestTask(apiEndpoint: state.apiEndpoint, idToken: state.idToken, context: context) { suggested in
+        AIService.suggestTask(apiKey: state.geminiApiKey, context: context) { suggested in
             DispatchQueue.main.async {
                 state.isGeneratingAI = false
                 if let suggested = suggested, !suggested.isEmpty {
@@ -472,8 +474,8 @@ struct TaskPopoverView: View {
                     self.updateRecentTasks(with: suggested)
                 } else {
                     let alert = NSAlert()
-                    alert.messageText = "AI Request Failed"
-                    alert.informativeText = "Failed to query Claude on Bedrock. Please check your network and API Gateway configuration."
+                    alert.messageText = "Gemini Request Failed"
+                    alert.informativeText = "Could not invoke Gemini API. Please check your internet connection and verify that your Gemini API Key is valid."
                     alert.addButton(withTitle: "OK")
                     alert.runModal()
                 }
