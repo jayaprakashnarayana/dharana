@@ -499,19 +499,20 @@ struct VisualEffectView: NSViewRepresentable {
 // 6. App Delegate to manage lifecycle, StatusItem, and windows
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
-    var popover: NSPopover?
+    var settingsWindow: NSWindow?
     var overlayWindow: NSWindow?
     let taskState = TaskState()
     var timer: Timer?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Hide standard dock icon since this is a utility/menu bar app
-        NSApp.setActivationPolicy(.accessory)
+        // Show in dock so it's always accessible
+        NSApp.setActivationPolicy(.regular)
         
         // Request notifications permission for timer alarms
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         
         setupStatusItem()
+        setupSettingsWindow()
         setupOverlayWindow()
         startCursorTracking()
     }
@@ -519,17 +520,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem?.button {
-            button.title = "🧘"
+            button.title = " DHARANA "
+            if let image = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: "Dharana") {
+                image.isTemplate = true
+                button.image = image
+                button.imagePosition = .imageLeft
+            }
             button.target = self
             button.action = #selector(handleStatusItemClick(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
+    }
+    
+    func setupSettingsWindow() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 280, height: 460),
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Dharana Dashboard"
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: TaskPopoverView(state: taskState))
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
         
-        let popover = NSPopover()
-        popover.contentSize = NSSize(width: 280, height: 440)
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: TaskPopoverView(state: taskState))
-        self.popover = popover
+        self.settingsWindow = window
+        window.makeKeyAndOrderFront(nil)
+    }
+    
+    func applicationDidBecomeActive(_ notification: Notification) {
+        settingsWindow?.makeKeyAndOrderFront(nil)
     }
     
     @objc func handleStatusItemClick(_ sender: AnyObject?) {
@@ -537,20 +560,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if event?.type == .rightMouseUp {
             showRightClickMenu()
         } else {
-            togglePopover(sender)
-        }
-    }
-    
-    func togglePopover(_ sender: AnyObject?) {
-        guard let button = statusItem?.button else { return }
-        if let popover = popover {
-            if popover.isShown {
-                popover.performClose(sender)
-            } else {
-                NSApp.activate(ignoringOtherApps: true)
-                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                popover.contentViewController?.view.window?.makeKey()
-            }
+            NSApp.activate(ignoringOtherApps: true)
+            settingsWindow?.makeKeyAndOrderFront(nil)
         }
     }
     
