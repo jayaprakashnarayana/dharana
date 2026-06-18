@@ -1,0 +1,13 @@
+# macOS files
+.DS_Store
+
+# Compiled products
+Dharana
+*.o
+*.d
+*.swiftdoc
+*.swiftmodule
+*.swiftsourceinfo
+
+# App bundle (exclude from source control so other developers can build it)
+Dharana.app/
