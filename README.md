@@ -10,7 +10,7 @@
 * **Direct Task Editing**: Click and type directly on the focus card inside the popover to update your task. No extra buttons needed.
 * **Pomodoro Focus Timer**: Preset timers (`15m`, `25m`, `50m`) with digital countdown display. Shows remaining time next to the cursor task pill on screen.
 * **Alarms & System Notifications**: Plays a beep and displays a system alert when the timer expires, auto-switching your focus to `Break Time ☕️`.
-* **Menu Bar Popover UI**: Access the SwiftUI tracker dashboard via a checklist icon in the status bar.
+* **Menu Bar Popover UI**: Access the SwiftUI tracker dashboard via the 🧘 (meditation emoji) icon in the status bar.
 * **Status Context Menu**: Hold **`Control`** and click (or **two-finger tap** on trackpads) the status icon to open a native menu and quickly switch between your top 3 tasks without opening the popover.
 * **Gemini AI Integration**: Connects directly to the Google Gemini API (`gemini-2.5-flash`) to analyze your active application window context and auto-suggest your task. Input your API key directly inside the app settings.
 
@@ -23,14 +23,14 @@ Open `/Users/jnaguboina/Dharana/` in Finder and double-click **`Dharana.app`**, 
 open /Users/jnaguboina/Dharana/Dharana.app
 ```
 
-*(Note: The app runs in the background as a menu bar utility, so it won't show up in your Dock. Look for the checklist icon in the top right of your screen).*
+*(Note: The app runs in the background as a menu bar utility, so it won't show up in your Dock. Look for the 🧘 icon in the top right of your screen).*
 
 ---
 
 ## Detailed Step-by-Step Interactions
 
 ### 1. Set/Edit Your Current Task
-1. **Single-click** the checklist icon in the macOS menu bar (top right) to open the popover.
+1. **Single-click** the 🧘 icon in the macOS menu bar (top right) to open the popover.
 2. Under the **`CURRENT FOCUS`** card, click directly on the task text (defaults to *"Focus Session 🧘"*).
 3. Type your new task and press **Enter** on your keyboard. Your cursor overlay updates instantly!
 
@@ -47,7 +47,7 @@ open /Users/jnaguboina/Dharana/Dharana.app
 
 ### 4. Right-Click Context Menu (Trackpad Shortcuts)
 If you want to change focus without opening the popover:
-* **Control + Click** (or **two-finger tap** on your trackpad) the menu bar checklist icon.
+* **Control + Click** (or **two-finger tap** on your trackpad) the 🧘 icon.
 * A native menu displays your top 3 recent tasks. 
 * Press the shortcut number (`1`, `2`, `3`) or click an item to switch focus.
 * Click **`Quit App`** to close Dharana.

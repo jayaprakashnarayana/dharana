@@ -519,7 +519,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "checklist", accessibilityDescription: "Dharana Focus Tracker")
+            button.title = "🧘"
             button.target = self
             button.action = #selector(handleStatusItemClick(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
