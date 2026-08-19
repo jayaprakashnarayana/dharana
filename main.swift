@@ -2,8 +2,65 @@ import Cocoa
 import SwiftUI
 import Combine
 import UserNotifications
+import Security
 
-// 1. TaskState (ObservableObject) to coordinate active task and timer between Popover and Overlay
+// 1. Hardware-Backed Encrypted Keychain Service for Secure API Key Storage
+class KeychainHelper {
+    private static let service = "com.dharana.focus-tracker"
+    private static let account = "gemini_api_key"
+    
+    static func save(key: String) {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Remove existing item
+        let queryDelete: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        SecItemDelete(queryDelete as CFDictionary)
+        
+        guard !trimmed.isEmpty, let data = trimmed.data(using: .utf8) else { return }
+        
+        // Add encrypted entry
+        let queryAdd: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        SecItemAdd(queryAdd as CFDictionary, nil)
+    }
+    
+    static func load() -> String {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        
+        var dataTypeRef: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
+        
+        if status == errSecSuccess, let data = dataTypeRef as? Data, let string = String(data: data, encoding: .utf8) {
+            return string
+        }
+        
+        // Automatic migration from legacy unencrypted UserDefaults plist
+        if let legacyKey = UserDefaults.standard.string(forKey: "dharana_gemini_api_key"), !legacyKey.isEmpty {
+            save(key: legacyKey)
+            UserDefaults.standard.removeObject(forKey: "dharana_gemini_api_key")
+            return legacyKey
+        }
+        
+        return ""
+    }
+}
+
+// 2. TaskState (ObservableObject) to coordinate active task and timer between Popover and Overlay
 class TaskState: ObservableObject {
     @Published var currentTask: String = "Focus Session 🧘"
     @Published var isVisible: Bool = true
@@ -12,6 +69,24 @@ class TaskState: ObservableObject {
             UserDefaults.standard.set(recentTasks, forKey: "dharana_recent_tasks")
         }
     }
+    
+    // Auto-hide & Overlay Behavior Settings
+    @Published var autoHideWhileTyping: Bool {
+        didSet { saveSettings() }
+    }
+    @Published var autoHideOnIdle: Bool {
+        didSet { saveSettings() }
+    }
+    @Published var idleTimeout: Double {
+        didSet { saveSettings() }
+    }
+    @Published var overlayOpacity: Double {
+        didSet { saveSettings() }
+    }
+    
+    // Secure Keychain API Key
+    @Published var isGeneratingAI: Bool = false
+    @Published var geminiApiKey: String = KeychainHelper.load()
     
     init() {
         if let saved = UserDefaults.standard.stringArray(forKey: "dharana_recent_tasks"), !saved.isEmpty {
@@ -25,6 +100,14 @@ class TaskState: ObservableObject {
                 "Coffee Break ☕️"
             ]
         }
+        
+        // Load overlay preferences
+        self.autoHideWhileTyping = UserDefaults.standard.object(forKey: "dharana_auto_hide_typing") == nil ? true : UserDefaults.standard.bool(forKey: "dharana_auto_hide_typing")
+        self.autoHideOnIdle = UserDefaults.standard.object(forKey: "dharana_auto_hide_idle") == nil ? true : UserDefaults.standard.bool(forKey: "dharana_auto_hide_idle")
+        let savedTimeout = UserDefaults.standard.double(forKey: "dharana_idle_timeout")
+        self.idleTimeout = savedTimeout == 0 ? 3.0 : savedTimeout
+        let savedOpacity = UserDefaults.standard.double(forKey: "dharana_overlay_opacity")
+        self.overlayOpacity = savedOpacity == 0 ? 0.9 : savedOpacity
     }
     
     // Timer State
@@ -32,12 +115,12 @@ class TaskState: ObservableObject {
     @Published var isTimerActive: Bool = false
     private var countdownTimer: AnyCancellable?
     
-    // Gemini AI Integration Settings
-    @Published var isGeneratingAI: Bool = false
-    @Published var geminiApiKey: String = UserDefaults.standard.string(forKey: "dharana_gemini_api_key") ?? ""
-    
     func saveSettings() {
-        UserDefaults.standard.set(geminiApiKey, forKey: "dharana_gemini_api_key")
+        KeychainHelper.save(key: geminiApiKey)
+        UserDefaults.standard.set(autoHideWhileTyping, forKey: "dharana_auto_hide_typing")
+        UserDefaults.standard.set(autoHideOnIdle, forKey: "dharana_auto_hide_idle")
+        UserDefaults.standard.set(idleTimeout, forKey: "dharana_idle_timeout")
+        UserDefaults.standard.set(overlayOpacity, forKey: "dharana_overlay_opacity")
     }
     
     // Timer Actions
@@ -87,16 +170,25 @@ class TaskState: ObservableObject {
     }
 }
 
-// 2. Gemini AI Integration Service (connects Swift directly to the Google Gemini API)
+// 3. Ephemeral, Zero-Disk-Footprint Gemini AI Service with Header Authentication
 class AIService {
+    // Ephemeral session avoids writing API responses or credentials to disk caches
+    private static let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 8
+        config.timeoutIntervalForResource = 12
+        return URLSession(configuration: config)
+    }()
+    
     static func suggestTask(apiKey: String, context: String, completion: @escaping (String?) -> Void) {
-        guard !apiKey.isEmpty else {
+        let cleanKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanKey.isEmpty else {
             completion(nil)
             return
         }
         
-        // Using Gemini 2.5 Flash as the standard fast, lightweight model
-        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=\(apiKey)"
+        // Security Fix: Avoid passing API keys in query string (keeps proxy/server logs clean)
+        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
         guard let url = URL(string: urlString) else {
             completion(nil)
             return
@@ -105,10 +197,11 @@ class AIService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 10
+        request.setValue(cleanKey, forHTTPHeaderField: "x-goog-api-key") // Secure header auth
         
-        // Formulate prompt for Gemini
-        let prompt = "Suggest a single, active, action-oriented task description (max 4 words, include 1 matching emoji at the end) describing what a developer is doing based on this context: '\(context)'. Output ONLY the task name, nothing else."
+        // Security Fix: Sanitize context to prevent prompt injection and keep payloads tight
+        let sanitizedContext = String(context.prefix(120).filter { $0.isLetter || $0.isNumber || $0.isWhitespace || "-_./:".contains($0) })
+        let prompt = "Suggest a single, active task description (max 4 words, 1 emoji at end) for: '\(sanitizedContext)'. Output ONLY the task name."
         
         let payload: [String: Any] = [
             "contents": [
@@ -119,8 +212,8 @@ class AIService {
                 ]
             ],
             "generationConfig": [
-                "temperature": 0.7,
-                "maxOutputTokens": 20
+                "temperature": 0.6,
+                "maxOutputTokens": 60
             ]
         ]
         
@@ -130,13 +223,12 @@ class AIService {
         }
         request.httpBody = httpBody
         
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        session.dataTask(with: request) { data, response, error in
             guard let data = data, error == nil else {
                 completion(nil)
                 return
             }
             
-            // Parse Google Gemini generateContent response JSON
             if let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
                let candidates = json["candidates"] as? [[String: Any]],
                let firstCandidate = candidates.first,
@@ -147,9 +239,6 @@ class AIService {
                 let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 completion(cleaned)
             } else {
-                if let rawString = String(data: data, encoding: .utf8) {
-                    print("Raw Gemini API error or response:", rawString)
-                }
                 completion(nil)
             }
         }.resume()
@@ -209,10 +298,19 @@ struct TaskPopoverView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            HStack(spacing: 8) {
+                if let nsImg = (Bundle.main.url(forResource: "AppIcon", withExtension: "icns").flatMap { NSImage(contentsOf: $0) }) ?? NSImage(contentsOfFile: "/Users/jnaguboina/Dharana/Dharana.icns") {
+                    Image(nsImage: nsImg)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 22, height: 22)
+                        .cornerRadius(5)
+                }
+                
                 Text("Dharana - Focus")
                     .font(.headline)
                     .foregroundColor(.white)
+                
                 Spacer()
                 
                 Button(action: {
@@ -220,17 +318,21 @@ struct TaskPopoverView: View {
                         showAISettings.toggle()
                     }
                 }) {
-                    Image(systemName: "brain.headset")
+                    Image(systemName: "gearshape.fill")
                         .foregroundColor(state.geminiApiKey.isEmpty ? .gray : .indigo)
                         .font(.system(size: 14, weight: .semibold))
                 }
                 .buttonStyle(PlainButtonStyle())
-                .help("Gemini API Settings")
+                .help("API Settings")
             }
             
-            // Collapsible Gemini Config settings
+            // Collapsible Settings (Gemini & Overlay Behavior)
             if showAISettings {
-                VStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("GEMINI AI CONFIG")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.gray)
+                    
                     SecureField("Gemini API Key...", text: $state.geminiApiKey, onCommit: {
                         state.saveSettings()
                     })
@@ -256,10 +358,72 @@ struct TaskPopoverView: View {
                             .font(.system(size: 10))
                             .foregroundColor(.gray)
                     }
+                    
+                    Divider().background(Color.white.opacity(0.1))
+                    
+                    Text("OVERLAY & TYPING BEHAVIOR")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.gray)
+                    
+                    Toggle("Auto-hide while typing ⌨️", isOn: $state.autoHideWhileTyping)
+                        .toggleStyle(SwitchToggleStyle(tint: .indigo))
+                        .font(.system(size: 11))
+                        .foregroundColor(.white)
+                    
+                    Toggle("Auto-hide when cursor idle ⏳", isOn: $state.autoHideOnIdle)
+                        .toggleStyle(SwitchToggleStyle(tint: .indigo))
+                        .font(.system(size: 11))
+                        .foregroundColor(.white)
+                    
+                    if state.autoHideOnIdle {
+                        HStack {
+                            Text("Idle delay:")
+                                .font(.system(size: 10))
+                                .foregroundColor(.gray)
+                            Spacer()
+                            Text("\(Int(state.idleTimeout))s")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white)
+                            Stepper("", value: $state.idleTimeout, in: 1...10, step: 1)
+                                .labelsHidden()
+                        }
+                    }
+                    
+                    HStack {
+                        Text("Opacity: \(Int(state.overlayOpacity * 100))%")
+                            .font(.system(size: 10))
+                            .foregroundColor(.gray)
+                        Spacer()
+                        Slider(value: $state.overlayOpacity, in: 0.3...1.0, step: 0.05)
+                            .frame(width: 110)
+                    }
+                    
+                    Divider().background(Color.white.opacity(0.1))
+                    
+                    HStack {
+                        Link(destination: URL(string: "https://buymeacoffee.com/9o0rFmKygY")!) {
+                            HStack(spacing: 5) {
+                                Text("☕️")
+                                Text("Buy Me a Coffee")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .foregroundColor(.yellow)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.yellow.opacity(0.12))
+                            .cornerRadius(6)
+                        }
+                        
+                        Spacer()
+                        
+                        Text("v1.0")
+                            .font(.system(size: 10))
+                            .foregroundColor(.gray)
+                    }
                 }
-                .padding(8)
+                .padding(10)
                 .background(Color.white.opacity(0.04))
-                .cornerRadius(6)
+                .cornerRadius(8)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
             
@@ -429,7 +593,8 @@ struct TaskPopoverView: View {
             }
         }
         .padding(16)
-        .frame(width: 280, height: showAISettings ? 470 : 440)
+        .frame(width: 300)
+        .frame(minHeight: showAISettings ? 620 : 450)
         .background(VisualEffectView().edgesIgnoringSafeArea(.all))
     }
     
@@ -470,7 +635,7 @@ struct TaskPopoverView: View {
                 
                 let alert = NSAlert()
                 alert.messageText = "Mock Gemini Suggestion"
-                alert.informativeText = "To trigger real Gemini suggestions, configure your Gemini API Key inside the Settings panel (brain icon)."
+                alert.informativeText = "To trigger real Gemini suggestions, configure your Gemini API Key inside the Settings panel (gear icon)."
                 alert.addButton(withTitle: "OK")
                 alert.runModal()
             }
@@ -519,9 +684,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let taskState = TaskState()
     var timer: Timer?
     
+    // Keyboard, Mouse Activity & Low-Power Idle Tracking
+    var globalKeyMonitor: Any?
+    var localKeyMonitor: Any?
+    var globalMouseMonitor: Any?
+    var lastTypingTimestamp: TimeInterval = 0
+    var lastMouseMoveTimestamp: TimeInterval = CACurrentMediaTime()
+    var lastMousePosition: NSPoint = .zero
+    var currentOverlayAlpha: CGFloat = 0.0
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Show in dock so it's always accessible
         NSApp.setActivationPolicy(.regular)
+        
+        // Explicitly set the Dock application icon
+        if let iconUrl = Bundle.main.url(forResource: "AppIcon", withExtension: "icns") ?? Bundle.main.url(forResource: "Dharana", withExtension: "icns"),
+           let img = NSImage(contentsOf: iconUrl) {
+            NSApp.applicationIconImage = img
+        } else if let fallbackImg = NSImage(contentsOfFile: "/Users/jnaguboina/Dharana/Dharana.icns") {
+            NSApp.applicationIconImage = fallbackImg
+        }
         
         // Request notifications permission for timer alarms
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
@@ -529,7 +711,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupSettingsWindow()
         setupOverlayWindow()
+        setupEventMonitors()
         startCursorTracking()
+    }
+    
+    func setupEventMonitors() {
+        // Global key monitor: captures typing across external apps (VS Code, Xcode, Safari, etc.)
+        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] _ in
+            self?.lastTypingTimestamp = CACurrentMediaTime()
+        }
+        
+        // Local key monitor: captures typing inside Dharana's own windows
+        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+            self?.lastTypingTimestamp = CACurrentMediaTime()
+            return event
+        }
+        
+        // Global mouse monitor: keeps mouse activity timestamp fresh without excessive polling
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]) { [weak self] _ in
+            self?.lastMouseMoveTimestamp = CACurrentMediaTime()
+        }
     }
     
     func setupStatusItem() {
@@ -549,7 +750,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func setupSettingsWindow() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 280, height: 460),
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 490),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -624,21 +825,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func setupOverlayWindow() {
-        let window = NSWindow(
+        let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 350, height: 50),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         
+        window.isFloatingPanel = true
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.ignoresMouseEvents = true // Click-through!
-        window.level = .statusBar // Float above other windows
+        window.ignoresMouseEvents = true // Click-through
+        window.level = .screenSaver // Above other windows
         window.isMovable = false
         window.hasShadow = false
+        window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = false
+        window.canHide = false
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        window.alphaValue = 0.0
         
         let hostingView = NSHostingView(rootView: CursorOverlayView(state: taskState))
+        hostingView.wantsLayer = true
+        hostingView.layerContentsRedrawPolicy = .onSetNeedsDisplay
         hostingView.frame = window.contentView?.bounds ?? .zero
         window.contentView = hostingView
         
@@ -647,29 +856,113 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func startCursorTracking() {
+        // High-efficiency adaptive loop
         timer = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
-            guard self.taskState.isVisible else {
-                self.overlayWindow?.orderOut(nil)
+            let now = CACurrentMediaTime()
+            let mouseLoc = NSEvent.mouseLocation
+            
+            // Mouse movement delta calculation
+            let dx = mouseLoc.x - self.lastMousePosition.x
+            let dy = mouseLoc.y - self.lastMousePosition.y
+            let moveDistance = sqrt(dx * dx + dy * dy)
+            
+            if moveDistance > 1.5 {
+                self.lastMouseMoveTimestamp = now
+                self.lastMousePosition = mouseLoc
+                
+                // Deliberate cursor motion clears typing suppression immediately
+                if moveDistance > 8.0 {
+                    self.lastTypingTimestamp = 0
+                }
+            }
+            
+            // Visibility determination
+            var targetVisible = self.taskState.isVisible
+            
+            // 1. Suppress while actively typing
+            if targetVisible && self.taskState.autoHideWhileTyping {
+                if (now - self.lastTypingTimestamp) < 1.4 {
+                    targetVisible = false
+                }
+            }
+            
+            // 2. Suppress when cursor is stationary beyond idle timeout
+            if targetVisible && self.taskState.autoHideOnIdle {
+                if (now - self.lastMouseMoveTimestamp) > self.taskState.idleTimeout {
+                    targetVisible = false
+                }
+            }
+            
+            // Fast fade out, smooth fade in
+            let targetAlpha: CGFloat = targetVisible ? CGFloat(self.taskState.overlayOpacity) : 0.0
+            let fadeSpeed: CGFloat = targetAlpha > self.currentOverlayAlpha ? 0.16 : 0.28
+            
+            if abs(self.currentOverlayAlpha - targetAlpha) < 0.02 {
+                self.currentOverlayAlpha = targetAlpha
+            } else {
+                self.currentOverlayAlpha += (targetAlpha - self.currentOverlayAlpha) * fadeSpeed
+            }
+            
+            guard let overlay = self.overlayWindow else { return }
+            
+            // Memory & GPU efficiency: do not compute layout when alpha is 0
+            if self.currentOverlayAlpha <= 0.01 {
+                if overlay.alphaValue != 0 {
+                    overlay.alphaValue = 0
+                }
                 return
             }
             
-            if self.overlayWindow?.isVisible == false {
-                self.overlayWindow?.orderFront(nil)
+            if overlay.alphaValue != self.currentOverlayAlpha {
+                overlay.alphaValue = self.currentOverlayAlpha
+            }
+            if !overlay.isVisible {
+                overlay.orderFront(nil)
             }
             
-            let mouseLoc = NSEvent.mouseLocation
+            // Smart Screen Boundary & Flipping Avoidance
+            let pillWidth: CGFloat = 280
+            let pillHeight: CGFloat = 34
             
-            let offsetWindowX = mouseLoc.x + 18
-            let offsetWindowY = mouseLoc.y - 12
+            let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first
+            let screenFrame = screen?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
             
-            self.overlayWindow?.setFrameOrigin(NSPoint(x: offsetWindowX, y: offsetWindowY))
+            var targetX = mouseLoc.x + 18
+            var targetY = mouseLoc.y - 12
+            
+            // Flip left if near right edge of screen
+            if targetX + pillWidth > screenFrame.maxX - 14 {
+                targetX = mouseLoc.x - pillWidth - 14
+            }
+            
+            // Flip above if near bottom edge of screen
+            if targetY < screenFrame.minY + 10 {
+                targetY = mouseLoc.y + 20
+            }
+            
+            // Clamp top boundary
+            if targetY + pillHeight > screenFrame.maxY - 10 {
+                targetY = screenFrame.maxY - pillHeight - 10
+            }
+            
+            overlay.setFrameOrigin(NSPoint(x: targetX, y: targetY))
         }
     }
     
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
+        timer = nil
+        if let gkm = globalKeyMonitor {
+            NSEvent.removeMonitor(gkm)
+        }
+        if let lkm = localKeyMonitor {
+            NSEvent.removeMonitor(lkm)
+        }
+        if let gmm = globalMouseMonitor {
+            NSEvent.removeMonitor(gmm)
+        }
     }
 }
 

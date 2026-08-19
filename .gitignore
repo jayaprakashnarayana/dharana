@@ -9,5 +9,7 @@ Dharana
 *.swiftmodule
 *.swiftsourceinfo
 
-# App bundle (exclude from source control so other developers can build it)
+# App bundle & Build outputs
 Dharana.app/
+build_temp/
+dist/
