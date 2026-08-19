@@ -14,6 +14,10 @@
     <string>Dharana</string>
     <key>CFBundleDisplayName</key>
     <string>Dharana</string>
+    <key>CFBundleGetInfoString</key>
+    <string>Dharana by Bhayapaha Intelligence (www.bhayapaha.in)</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 Bhayapaha Intelligence. All rights reserved.</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

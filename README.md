@@ -9,6 +9,13 @@
 </p>
 
 <p align="center">
+  Developed with ❤️ by <a href="https://www.bhayapaha.in"><b>Bhayapaha Intelligence</b></a>
+</p>
+
+<p align="center">
+  <a href="https://www.bhayapaha.in">
+    <img src="https://img.shields.io/badge/Company-Bhayapaha%20Intelligence-4F46E5?style=for-the-badge&logo=globe&logoColor=white" alt="Bhayapaha Intelligence" />
+  </a>
   <a href="https://buymeacoffee.com/9o0rFmKygY">
     <img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" />
   </a>
@@ -35,9 +42,9 @@
 * **⌨️ Smart Typing Auto-Hide**: Automatically vanishes the moment you type in VS Code, Xcode, Safari, Terminal, or Slack so it **never** obstructs your code or text. Fades back in seamlessly when you move your mouse.
 * **⏳ Inactivity Idle Fade-Out**: Fades to zero opacity when the cursor is stationary for 3 seconds, keeping your screen clean and distraction-free while reading.
 * **📐 Display Edge & Boundary Avoidance**: Dynamically flips position (left/right, above/below) when approaching screen edges to avoid cursor clipping.
-* **⏱️ Pomodoro Focus Timer**: Quick preset buttons (`15m`, `25m`, `50m`) with live digital countdown display, macOS notifications, and sound alerts on session completion.
+* **⏱️ Pomodoro Focus Timer**: Quick preset buttons (`15m`, `25m`, `50m`) plus **custom duration input** with live digital countdown display, macOS notifications, and sound alerts on session completion.
 * **🧠 Google Gemini AI Integration**: Analyzes your active application context to auto-suggest concise, emoji-tagged focus milestones via `gemini-2.5-flash`.
-* **🔒 Hardware-Backed Keychain Security**: Stores your Google Gemini API key securely in the macOS Keychain (`Security.framework`) with zero plain-text disk storage.
+* **🔒 Hardware-Backed AES-256 Encryption**: Stores your API key securely with zero system password popups.
 * **⚡ 0.0% CPU & Low-Power Idle Mode**: Uses adaptive event listeners and GPU-cached rendering to eliminate idle battery drain on Apple Silicon & Intel Macs.
 * **🛡️ Non-Obtrusive Click-Through**: Built with `ignoresMouseEvents = true` so the overlay never intercepts mouse clicks, selections, or drag-and-drop actions underneath it.
 
@@ -85,27 +92,20 @@ Installers will be generated in `dist/`:
 ## 🎯 Usage Guide
 
 1. **Set Focus**: Click the Dharana Dock icon or Menu Bar item (`⚡️ DHARANA`), type your active task under **`WHAT ARE YOU FOCUSING ON?`**, and press **Enter**.
-2. **Start Pomodoro**: Click `15m`, `25m`, or `50m` to begin a timed focus sprint.
+2. **Start Pomodoro**: Click `15m`, `25m`, `50m` or type a **custom number of minutes** and click **Set Custom Time**.
 3. **AI Suggestion**: Click the **Sparkles (✨)** button to have Gemini AI auto-detect what you're working on and title your session.
 4. **Settings & Customization**: Click the **Gear (⚙️)** icon to customize typing auto-hide, idle delay, pill opacity, or configure your Gemini API Key.
 
 ---
 
-## ☕️ Support & Sponsorship
+## 🏢 About Bhayapaha Intelligence
 
-If Dharana helps you stay in the flow and boost your daily productivity, consider supporting its development:
+**Dharana** is developed and maintained by **[Bhayapaha Intelligence](https://www.bhayapaha.in)**. We build human-centered AI systems, productivity tools, and intelligent macOS applications.
 
-<p align="center">
-  <a href="https://buymeacoffee.com/9o0rFmKygY">
-    <img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" />
-  </a>
-</p>
-
-<p align="center">
-  <b>Support via Buy Me a Coffee:</b> <a href="https://buymeacoffee.com/9o0rFmKygY">buymeacoffee.com/9o0rFmKygY</a>
-</p>
+* 🌐 **Website**: [www.bhayapaha.in](https://www.bhayapaha.in)
+* ☕️ **Support the Developer**: [buymeacoffee.com/9o0rFmKygY](https://buymeacoffee.com/9o0rFmKygY)
 
 ---
 
 ## 📄 License
-This project is open-source under the [MIT License](LICENSE).
+This project is open-source under the [MIT License](LICENSE) &copy; 2026 Bhayapaha Intelligence.

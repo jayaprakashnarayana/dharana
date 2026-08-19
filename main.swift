@@ -422,25 +422,36 @@ struct TaskPopoverView: View {
                     
                     Divider().background(Color.white.opacity(0.1))
                     
-                    HStack {
-                        Link(destination: URL(string: "https://buymeacoffee.com/9o0rFmKygY")!) {
-                            HStack(spacing: 5) {
-                                Text("☕️")
-                                Text("Buy Me a Coffee")
-                                    .font(.system(size: 11, weight: .semibold))
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Link(destination: URL(string: "https://buymeacoffee.com/9o0rFmKygY")!) {
+                                HStack(spacing: 5) {
+                                    Text("☕️")
+                                    Text("Buy Me a Coffee")
+                                        .font(.system(size: 11, weight: .semibold))
+                                }
+                                .foregroundColor(.yellow)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.yellow.opacity(0.12))
+                                .cornerRadius(6)
                             }
-                            .foregroundColor(.yellow)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.yellow.opacity(0.12))
-                            .cornerRadius(6)
+                            
+                            Spacer()
+                            
+                            Text("v1.0")
+                                .font(.system(size: 10))
+                                .foregroundColor(.gray)
                         }
                         
-                        Spacer()
-                        
-                        Text("v1.0")
-                            .font(.system(size: 10))
-                            .foregroundColor(.gray)
+                        HStack(spacing: 4) {
+                            Text("By")
+                                .font(.system(size: 9))
+                                .foregroundColor(.gray)
+                            Link("Bhayapaha Intelligence (www.bhayapaha.in)", destination: URL(string: "https://www.bhayapaha.in")!)
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(.indigo)
+                        }
                     }
                 }
                 .padding(10)
@@ -877,10 +888,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Visit Bhayapaha Intelligence 🌐", action: #selector(openCompanyWebsite), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Quit App", action: #selector(quitApp), keyEquivalent: "q"))
         
         if let button = statusItem?.button {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
+        }
+    }
+    
+    @objc func openCompanyWebsite() {
+        if let url = URL(string: "https://www.bhayapaha.in") {
+            NSWorkspace.shared.open(url)
         }
     }
     
