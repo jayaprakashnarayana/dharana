@@ -316,6 +316,7 @@ struct CursorOverlayView: View {
 struct TaskPopoverView: View {
     @ObservedObject var state: TaskState
     @State private var showAISettings: Bool = false
+    @State private var customMinutes: String = ""
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -490,18 +491,19 @@ struct TaskPopoverView: View {
                     .stroke(Color.indigo.opacity(0.25), lineWidth: 1)
             )
             
-            // Focus Timer Controls
-            VStack(alignment: .leading, spacing: 6) {
+            // Focus Timer Controls (Presets + Custom Specific Duration)
+            VStack(alignment: .leading, spacing: 7) {
                 Text("FOCUS TIMER")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundColor(.gray)
                 
-                HStack(spacing: 8) {
+                // Row 1: Digital Display + Quick Presets + Stop
+                HStack(spacing: 6) {
                     // Digital Time Display
                     Text(formatTime(state.timerRemaining))
-                        .font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
                         .foregroundColor(state.isTimerActive ? .green : .white)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, 7)
                         .padding(.vertical, 5)
                         .background(Color.white.opacity(0.08))
                         .cornerRadius(6)
@@ -514,8 +516,8 @@ struct TaskPopoverView: View {
                         }
                         .buttonStyle(PlainButtonStyle())
                         .font(.system(size: 11, weight: .medium))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 5)
                         .background(Color.white.opacity(0.05))
                         .cornerRadius(6)
                     }
@@ -528,11 +530,48 @@ struct TaskPopoverView: View {
                         .buttonStyle(PlainButtonStyle())
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.red)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 5)
                         .background(Color.red.opacity(0.15))
                         .cornerRadius(6)
                     }
+                }
+                
+                // Row 2: Custom Specific Minutes Input
+                HStack(spacing: 6) {
+                    HStack(spacing: 4) {
+                        TextField("mins", text: $customMinutes, onCommit: startCustomTimer)
+                            .textFieldStyle(PlainTextFieldStyle())
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .frame(width: 44)
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 6)
+                            .background(Color.white.opacity(0.06))
+                            .cornerRadius(5)
+                        
+                        Text("min")
+                            .font(.system(size: 10))
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Button(action: startCustomTimer) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 8))
+                            Text("Set Custom Time")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(.indigo)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.indigo.opacity(0.15))
+                        .cornerRadius(5)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    
+                    Spacer()
                 }
             }
             
@@ -615,8 +654,18 @@ struct TaskPopoverView: View {
         }
         .padding(16)
         .frame(width: 300)
-        .frame(minHeight: showAISettings ? 620 : 450)
+        .frame(minHeight: showAISettings ? 640 : 470)
         .background(VisualEffectView().edgesIgnoringSafeArea(.all))
+    }
+    
+    private func startCustomTimer() {
+        let cleaned = customMinutes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let mins = Int(cleaned), mins > 0 {
+            let clampedMins = min(mins, 720) // Up to 12 hours
+            state.startTimer(durationInSeconds: clampedMins * 60)
+            updateRecentTasks(with: state.currentTask)
+            customMinutes = ""
+        }
     }
     
     private func updateRecentTasks(with task: String) {
