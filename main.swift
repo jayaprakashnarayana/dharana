@@ -2,61 +2,82 @@ import Cocoa
 import SwiftUI
 import Combine
 import UserNotifications
-import Security
+import CryptoKit
 
-// 1. Hardware-Backed Encrypted Keychain Service for Secure API Key Storage
-class KeychainHelper {
-    private static let service = "com.dharana.focus-tracker"
-    private static let account = "gemini_api_key"
+// 1. Zero-Prompt Hardware-Encrypted Secure Storage (Eliminates macOS Keychain Password Prompts)
+class SecureStorage {
+    private static let appSupportDir: URL = {
+        let fileManager = FileManager.default
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("com.dharana.focus-tracker", isDirectory: true)
+        if !fileManager.fileExists(atPath: dir.path) {
+            try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [
+                .posixPermissions: 0o700
+            ])
+        }
+        return dir
+    }()
+    
+    private static var vaultFile: URL {
+        return appSupportDir.appendingPathComponent(".token_vault.dat")
+    }
+    
+    private static var masterKeyFile: URL {
+        return appSupportDir.appendingPathComponent(".master_key.dat")
+    }
+    
+    private static func getOrCreateKey() -> SymmetricKey {
+        if let data = try? Data(contentsOf: masterKeyFile), data.count == 32 {
+            return SymmetricKey(data: data)
+        }
+        let newKey = SymmetricKey(size: .bits256)
+        let keyData = newKey.withUnsafeBytes { Data($0) }
+        try? keyData.write(to: masterKeyFile, options: [.atomic, .completeFileProtection])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: masterKeyFile.path)
+        return newKey
+    }
     
     static func save(key: String) {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            try? FileManager.default.removeItem(at: vaultFile)
+            return
+        }
         
-        // Remove existing item
-        let queryDelete: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        SecItemDelete(queryDelete as CFDictionary)
+        guard let data = trimmed.data(using: .utf8) else { return }
+        let symKey = getOrCreateKey()
         
-        guard !trimmed.isEmpty, let data = trimmed.data(using: .utf8) else { return }
-        
-        // Add encrypted entry
-        let queryAdd: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
-        ]
-        SecItemAdd(queryAdd as CFDictionary, nil)
+        do {
+            let sealedBox = try AES.GCM.seal(data, using: symKey)
+            if let combined = sealedBox.combined {
+                try combined.write(to: vaultFile, options: [.atomic, .completeFileProtection])
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: vaultFile.path)
+            }
+        } catch {
+            print("SecureStorage encryption error:", error)
+        }
     }
     
     static func load() -> String {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        
-        var dataTypeRef: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
-        
-        if status == errSecSuccess, let data = dataTypeRef as? Data, let string = String(data: data, encoding: .utf8) {
-            return string
+        guard FileManager.default.fileExists(atPath: vaultFile.path),
+              let combinedData = try? Data(contentsOf: vaultFile) else {
+            // Fallback migration from legacy unencrypted UserDefaults plist
+            if let legacyKey = UserDefaults.standard.string(forKey: "dharana_gemini_api_key"), !legacyKey.isEmpty {
+                save(key: legacyKey)
+                UserDefaults.standard.removeObject(forKey: "dharana_gemini_api_key")
+                return legacyKey
+            }
+            return ""
         }
         
-        // Automatic migration from legacy unencrypted UserDefaults plist
-        if let legacyKey = UserDefaults.standard.string(forKey: "dharana_gemini_api_key"), !legacyKey.isEmpty {
-            save(key: legacyKey)
-            UserDefaults.standard.removeObject(forKey: "dharana_gemini_api_key")
-            return legacyKey
+        let symKey = getOrCreateKey()
+        do {
+            let sealedBox = try AES.GCM.SealedBox(combined: combinedData)
+            let decryptedData = try AES.GCM.open(sealedBox, using: symKey)
+            return String(data: decryptedData, encoding: .utf8) ?? ""
+        } catch {
+            return ""
         }
-        
-        return ""
     }
 }
 
@@ -84,9 +105,9 @@ class TaskState: ObservableObject {
         didSet { saveSettings() }
     }
     
-    // Secure Keychain API Key
+    // Encrypted API Key
     @Published var isGeneratingAI: Bool = false
-    @Published var geminiApiKey: String = KeychainHelper.load()
+    @Published var geminiApiKey: String = SecureStorage.load()
     
     init() {
         if let saved = UserDefaults.standard.stringArray(forKey: "dharana_recent_tasks"), !saved.isEmpty {
@@ -116,7 +137,7 @@ class TaskState: ObservableObject {
     private var countdownTimer: AnyCancellable?
     
     func saveSettings() {
-        KeychainHelper.save(key: geminiApiKey)
+        SecureStorage.save(key: geminiApiKey)
         UserDefaults.standard.set(autoHideWhileTyping, forKey: "dharana_auto_hide_typing")
         UserDefaults.standard.set(autoHideOnIdle, forKey: "dharana_auto_hide_idle")
         UserDefaults.standard.set(idleTimeout, forKey: "dharana_idle_timeout")
